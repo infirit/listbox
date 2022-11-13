@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Generated with glade 3.38.2 -->
+<!-- Generated with glade 3.40.0 -->
 <interface>
   <requires lib="gtk+" version="3.24"/>
   <object class="GtkRevealer" id="row_revealer">
     <property name="visible">True</property>
     <property name="can-focus">False</property>
-    <property name="transition-type">crossfade</property>
+    <property name="transition-type">slide-up</property>
     <child>
       <!-- n-columns=3 n-rows=1 -->
       <object class="GtkGrid" id="device_grid">
@@ -72,7 +72,6 @@
                 <property name="halign">start</property>
                 <property name="label" translatable="yes">&lt;i&gt;00:00:00:00:00&lt;/i&gt;</property>
                 <property name="use-markup">True</property>
-                <property name="selectable">True</property>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -130,25 +129,6 @@
               </packing>
             </child>
             <child>
-              <object class="GtkRevealer" id="lq_revealer">
-                <property name="name">lq_revealer</property>
-                <property name="visible">True</property>
-                <property name="can-focus">False</property>
-                <property name="transition-type">crossfade</property>
-                <child>
-                  <object class="GtkImage" id="lq_image">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                  </object>
-                </child>
-              </object>
-              <packing>
-                <property name="expand">False</property>
-                <property name="fill">True</property>
-                <property name="position">2</property>
-              </packing>
-            </child>
-            <child>
               <object class="GtkRevealer" id="tpl_revealer">
                 <property name="name">tpl_revealer</property>
                 <property name="visible">True</property>
@@ -164,7 +144,7 @@
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">True</property>
-                <property name="position">3</property>
+                <property name="position">2</property>
               </packing>
             </child>
           </object>

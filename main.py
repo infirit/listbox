@@ -10,13 +10,13 @@ from typing import Dict, Optional
 from gi.repository import Gdk
 from gi.repository import Gtk
 from gi.repository import GLib
+from gi.repository import Gio
 from gi.repository import GdkPixbuf
 from blueman.bluez.Adapter import Adapter
 from blueman.bluez.Battery import Battery
 from blueman.bluez.Device import Device
 from blueman.bluez.Manager import Manager
 from blueman.DeviceClass import get_minor_class, get_major_class, gatt_appearance_to_name
-from blueman.main.Config import Config
 from _blueman import ConnInfoReadError, conn_info
 
 OLD_CSS = b"""
@@ -31,12 +31,6 @@ levelbar trough {
   padding: 1px;
 }
 
-levelbar#lq_levelbar block.filled {
-  background-color: #71d016;
-  border-color: #71d016;
-  background: linear-gradient(15deg, #5eb30d 10%, #71d016 10%, #71d016 20%, #5eb30d 20%, #5eb30d 30%, #71d016 30%, #71d016 40%, #5eb30d 40%, #5eb30d 50%, #71d016 50%, #71d016 60%, #5eb30d 60%, #5eb30d 70%, #71d016 70%, #71d016 80%, #5eb30d 80%, #5eb30d 90%, #71d016 90%, #71d016 100%);
-}
-
 levelbar#battery_levelbar block.filled {
   background-color: grey;
   border-color: grey;
@@ -46,6 +40,26 @@ levelbar#rssi_levelbar block.filled {
   background-color: orange;
   border-color: orange;
 }
+"""
+
+
+DEVICEMENU = """
+<interface>
+  <menu id="devicemenu">
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">Connect</attribute>
+        <attribute name="action">app.connect</attribute>
+        <attribute name="icon">bluetooth-symbolic</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Pair</attribute>
+        <attribute name="action">app.pair</attribute>
+        <attribute name="icon">blueman-pair-symbolic</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>
 """
 
 
@@ -112,8 +126,6 @@ class DeviceListBoxRow(Gtk.ListBoxRow):
         if not cinfo.failed:
             rssi_raw = cinfo.get_rssi()
             rssi_val = max(50 + float(rssi_raw) / 127 * 50, 10)
-            lq_raw = cinfo.get_lq()
-            lq_val = max(float(lq_raw) / 255 * 100, 10)
             tpl_val = max(50 + float(cinfo.get_tpl()) / 127 * 50, 10)
 
             w = 14 # * self.get_scale_factor()
@@ -124,23 +136,16 @@ class DeviceListBoxRow(Gtk.ListBoxRow):
             rssi_pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(rssi_path, w, h, True)
             self.builder_object_method("rssi_image", "set_from_pixbuf", rssi_pb)
 
-            lq_path = os.path.join(pixmap_path, f"blueman-lq-{int(round(lq_val, -1))}.png")
-            lq_pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(lq_path, w, h, True)
-            self.builder_object_method("lq_image", "set_from_pixbuf", lq_pb)
-
             tpl_path = os.path.join(pixmap_path, f"blueman-tpl-{int(round(tpl_val, -1))}.png")
             tpl_pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(tpl_path, w, h, True)
             self.builder_object_method("tpl_image", "set_from_pixbuf", tpl_pb)
 
-            print(f"raw values: rssi {rssi_raw} lq {lq_raw} tpl {tpl_val}")
+            print(f"raw values: rssi {rssi_raw} tpl {tpl_val}")
             #self.builder_object_method("rssi_levelbar", "set_value", rssi_val)
-            #self.builder_object_method("lq_levelbar", "set_value", lq_val)
             #self.builder_object_method("tpl_levelbar", "set_value", tpl_val)
 
         self.builder_object_method("rssi_revealer", "set_reveal_child", self.device["Connected"])
         #self.builder_object_method("rssi_label", "set_markup", f"<span size='small'>RSSI {rssi_val}</span>")
-        self.builder_object_method("lq_revealer", "set_reveal_child", self.device["Connected"])
-        #self.builder_object_method("lq_label", "set_markup", f"<span size='small'>LQ {lq_val}</span>")
         self.builder_object_method("tpl_revealer", "set_reveal_child", self.device["Connected"])
 
     def set_device_icon(self, icon_name):
@@ -248,7 +253,7 @@ class BluemanListBox(Gtk.Application):
         self.rows: Dict[str, DeviceListBoxRow] = {}
         self.selected: Optional[str] = None
         self.builder: Gtk.Builder = Gtk.Builder.new_from_file("main_window.ui")
-        self.config = Config("org.blueman.general")
+        self.config = Gio.Settings(schema="org.blueman.general")
         self.config.connect("changed", self.on_settings_changed)
 
     def do_startup(self):
@@ -265,8 +270,28 @@ class BluemanListBox(Gtk.Application):
         self.listbox.set_sort_func(self.listbox_sort)
         self.listbox.connect("row_selected", self.on_signal_selected)
 
-        # self.listbox.connect("button-press-event", self.on_clicked)
+        self.listbox.connect("button-press-event", self.on_clicked)
         # self.connect("drag-motion", self.drag_motion)
+
+        search_action = Gio.SimpleAction.new_stateful("search", None, GLib.Variant.new_boolean(False))
+        search_action.connect("change-state", self.on_search)
+        self.add_action(search_action)
+
+        connect_action = Gio.SimpleAction.new("connect", None)
+        connect_action.connect("activate", self._on_connect)
+        self.add_action(connect_action)
+
+        pair_action = Gio.SimpleAction.new("pair", None)
+        pair_action.connect("activate", self._on_connect)
+        self.add_action(pair_action)
+
+    def _on_connect(self, action, val):
+        row = self.rows[self.selected]
+        print(f"Connecting {row.device['Alias']}")
+
+    def _on_pair(self, action, val):
+        row = self.rows[self.selected]
+        print(f"Pairing {row.device['Alias']}")
 
     def do_activate(self):
         if not self.window:
@@ -275,6 +300,10 @@ class BluemanListBox(Gtk.Application):
             self.window.present()
 
             self.manager.populate_devices()
+            self.on_signal_selected(self.listbox, None)
+
+    def on_search(self, action, value):
+        print(f"{action} {value}")
 
     def on_settings_changed(self, settings, key):
         print(settings, key)
@@ -283,14 +312,30 @@ class BluemanListBox(Gtk.Application):
         row = widget.get_row_at_y(y)
         print(row)
 
-
     def on_clicked(self, widget, event):
         row = widget.get_row_at_y(event.y)
-        print(widget, event, row)
+        widget.select_row(row)
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            print(widget, event, row, dir(event))
+            model = Gtk.Builder.new_from_string(DEVICEMENU, -1).get_object("devicemenu")
+            menu = Gtk.Popover.new_from_model(widget, model)
+            menu.set_position(Gtk.PositionType.BOTTOM)
+            rect = Gdk.Rectangle()
+            rect.x = event.x
+            rect.y = event.y
+            menu.set_pointing_to(rect)
+            menu.popup()
 
-    def on_signal_selected(self, _listbox, row):
+        if event.type == Gdk.EventType.DOUBLE_BUTTON_PRESS:
+            print("Double")
+
+    def on_signal_selected(self, listbox, row):
         if row is None:
-            self.selected = None
+            for child in listbox:
+                assert isinstance(child, Gtk.ListBoxRow)
+                if child.get_selectable():
+                    listbox.select_row(child)
+                    break
             return
 
         print(f"Row selected {row.device['Alias']}")
@@ -338,11 +383,24 @@ class BluemanListBox(Gtk.Application):
         if row1.device is None or row2.device is None:
             return 0
 
-        if row1.device["Alias"] < row2.device["Alias"]:
-            return -1
-        elif row1.device["Alias"] > row2.device["Alias"]:
+        row1_rank = 0
+        row2_rank = 0
+
+        if row1.device["Paired"]:
+            row1_rank += 10
+        if row2.device["Paired"]:
+            row2_rank += 10
+
+        if row1.device["Alias"] > row2.device["Alias"]:
+            row1_rank += 1
+        elif row1.device["Alias"] < row2.device["Alias"]:
+            row2_rank += 1
+
+        if row1_rank > row2_rank:
             return 1
-        elif row1.device["Alias"] == row2.device["Alias"]:
+        elif row1_rank < row2_rank:
+            return -1
+        else:
             return 0
 
 
